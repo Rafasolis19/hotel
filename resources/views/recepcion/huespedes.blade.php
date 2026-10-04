@@ -46,7 +46,35 @@
             border-radius: 6px;
             cursor: pointer;
         }
+
+        .volver {
+            display: inline-block;
+            margin-top: 18px;
+            padding: 10px 15px;
+            border-radius: 6px;
+            background: #dc2626;
+            color: white;
+            text-decoration: none;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+        }
+
+        th {
+            background: #0f766e;
+            color: white;
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/hotel-theme.css') }}">
 </head>
 
 <body>
@@ -55,52 +83,68 @@
 
     <h1>Registrar Huésped</h1>
 
-    <form method="POST" action="/huespedes">
+    @if ($errors->any())
+        <div style="color: #b91c1c;">
+            <ul>
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
 
+    <form method="POST" action="/huespedes">
         @csrf
 
-        <label>Nombre</label>
-        <input type="text" name="nombre" required>
+        <label for="nombre">Nombre</label>
+        <input id="nombre" type="text" name="nombre" value="{{ old('nombre') }}" required>
 
-        <label>Apellido paterno</label>
-        <input type="text" name="apellido_paterno" required>
+        <label for="apellido_paterno">Apellido paterno</label>
+        <input id="apellido_paterno" type="text" name="apellido_paterno"
+               value="{{ old('apellido_paterno') }}" required>
 
-        <label>Apellido materno</label>
-        <input type="text" name="apellido_materno" required>
+        <label for="apellido_materno">Apellido materno</label>
+        <input id="apellido_materno" type="text" name="apellido_materno"
+               value="{{ old('apellido_materno') }}" required>
 
-        <label>Número de teléfono</label>
-        <input type="text" name="numero" required>
+        <label for="numero">Número de teléfono</label>
+        <input id="numero" type="text" name="numero" value="{{ old('numero') }}" required>
 
-        <label>Correo electrónico</label>
-        <input type="email" name="email" required>
+        <label for="email">Correo electrónico</label>
+        <input id="email" type="email" name="email" value="{{ old('email') }}" required>
 
         <button type="submit">Guardar huésped</button>
-
     </form>
 
     <hr>
 
-<h2>Huéspedes registrados</h2>
+    <h2>Huéspedes registrados</h2>
 
-<table border="1" cellpadding="10">
-    <tr>
-        <th>Nombre</th>
-        <th>Apellido paterno</th>
-        <th>Apellido materno</th>
-        <th>Teléfono</th>
-        <th>Email</th>
-    </tr>
-
-    @foreach ($huespedes as $huesped)
+    <table border="1">
         <tr>
-            <td>{{ $huesped->nombre }}</td>
-            <td>{{ $huesped->{'apellido paterno'} }}</td>
-            <td>{{ $huesped->{'apellido materno'} }}</td>
-            <td>{{ $huesped->{'numero '} }}</td>
-            <td>{{ $huesped->email }}</td>
+            <th>Nombre</th>
+            <th>Apellido paterno</th>
+            <th>Apellido materno</th>
+            <th>Teléfono</th>
+            <th>Email</th>
         </tr>
-    @endforeach
-</table>
+
+        @forelse ($huespedes as $huesped)
+            <tr>
+                <td>{{ $huesped->nombre }}</td>
+                <td>{{ $huesped->apellido_paterno }}</td>
+                <td>{{ $huesped->apellido_materno }}</td>
+                <td>{{ $huesped->numero }}</td>
+                <td>{{ $huesped->email }}</td>
+            </tr>
+        @empty
+            <tr>
+                <td colspan="5">Todavía no hay huéspedes registrados.</td>
+            </tr>
+        @endforelse
+    </table>
+
+    <a class="volver" href="/recepcion">← Regresar al panel</a>
 
 </div>
 

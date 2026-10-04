@@ -115,6 +115,7 @@
             margin-bottom: 20px;
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/hotel-theme.css') }}">
 </head>
 
 <body>
