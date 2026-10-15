@@ -92,7 +92,7 @@
 
     <section class="cuadro">
         <h2>Reservaciones pendientes de pago</h2>
-        <p>Selecciona una reservación para registrar su pago.</p>
+        <p>Selecciona una reservación para registrar un pago completo, un abono o dividirlo entre dos métodos.</p>
 
         <table>
             <thead>
@@ -101,6 +101,8 @@
                     <th>Huésped</th>
                     <th>Habitación</th>
                     <th>Total</th>
+                    <th>Abonado</th>
+                    <th>Saldo pendiente</th>
                     <th>Acción</th>
                 </tr>
             </thead>
@@ -115,18 +117,20 @@
                         </td>
                         <td>{{ $reservacion->habitacion_nombre }}</td>
                         <td>${{ number_format($reservacion->total, 2) }}</td>
+                        <td>${{ number_format($reservacion->monto_pagado, 2) }}</td>
+                        <td>${{ number_format($reservacion->saldo_pendiente, 2) }}</td>
                         <td>
                             <a
                                 class="boton"
                                 href="/pagos/crear/{{ $reservacion->id }}"
                             >
-                                Registrar pago
+                                Registrar pago o abono
                             </a>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="vacio">
+                        <td colspan="7" class="vacio">
                             No hay reservaciones pendientes de pago.
                         </td>
                     </tr>
@@ -185,7 +189,7 @@
         </table>
     </section>
 
-    <a href="/recepcion" class="volver">← Volver al panel</a>
+    <a href="{{ auth()->user()->role === 'administrador' ? route('admin') : '/recepcion' }}" class="volver">← Volver al panel</a>
 </main>
 </body>
 </html>

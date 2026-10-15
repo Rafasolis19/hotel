@@ -21,11 +21,15 @@
 <body>
 <main>
     <h1>Huéspedes</h1>
-    <p>Desde esta pantalla el administrador puede corregir los datos registrados.</p>
+    <p>Consulta, corrige y registra huéspedes del hotel.</p>
 
     @if (session('success'))
         <div class="mensaje">{{ session('success') }}</div>
     @endif
+
+    <p>
+        <a class="boton" href="{{ route('admin.huespedes.create') }}">+ Registrar huésped</a>
+    </p>
 
     <table>
         <thead>

@@ -15,7 +15,7 @@ class RoleMiddleware
      */
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
-        if (! in_array($request->user()->role, $roles, true)) {
+        if ($request->user()->role !== 'administrador' && ! in_array($request->user()->role, $roles, true)) {
             abort(403);
         }
 

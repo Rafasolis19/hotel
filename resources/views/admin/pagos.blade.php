@@ -12,7 +12,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { padding: 11px; border: 1px solid #ddd; text-align: left; }
         th { background: #172554; color: white; }
-        .aviso { padding: 12px; background: #eff6ff; color: #1e3a8a; border-radius: 6px; }
+        .mensaje { margin: 16px 0; padding: 12px; border-radius: 6px; background: #dcfce7; color: #166534; }
         .volver { display: inline-block; margin-top: 20px; padding: 10px 15px; border-radius: 6px; background: #dc2626; color: white; text-decoration: none; }
     </style>
     <link rel="stylesheet" href="{{ asset('css/hotel-theme.css') }}">
@@ -21,8 +21,45 @@
 <main>
     <h1>Historial de pagos</h1>
     <p>Consulta los pagos junto con el huésped, la habitación y el método utilizado.</p>
-    <p class="aviso">Por seguridad, las tarjetas se identifican únicamente por sus últimos cuatro dígitos. No se almacena ni muestra el número completo ni el código de seguridad.</p>
 
+    @if (session('success'))
+        <div class="mensaje">{{ session('success') }}</div>
+    @endif
+
+    <h2>Reservaciones pendientes de pago</h2>
+    <p>Selecciona una reservación para registrar el cobro.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Reservación</th>
+                <th>Huésped</th>
+                <th>Habitación</th>
+                <th>Total</th>
+                <th>Abonado</th>
+                <th>Saldo pendiente</th>
+                <th>Acción</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse ($pendientes as $reservacion)
+                <tr>
+                    <td>#{{ $reservacion->id }}</td>
+                    <td>{{ $reservacion->huesped_nombre }} {{ $reservacion->apellido_paterno }} {{ $reservacion->apellido_materno }}</td>
+                    <td>{{ $reservacion->habitacion_nombre }}</td>
+                    <td>${{ number_format($reservacion->total, 2) }}</td>
+                    <td>${{ number_format($reservacion->monto_pagado, 2) }}</td>
+                    <td>${{ number_format($reservacion->saldo_pendiente, 2) }}</td>
+                    <td><a class="boton" href="/pagos/crear/{{ $reservacion->id }}">Registrar pago</a></td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="7">No hay reservaciones pendientes de pago.</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
+
+    <h2>Pagos registrados</h2>
     <table>
         <thead>
             <tr>

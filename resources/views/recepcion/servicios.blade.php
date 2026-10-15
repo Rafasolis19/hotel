@@ -147,7 +147,7 @@
         </div>
     </section>
 
-    <a href="/recepcion" class="volver">← Volver al panel</a>
+    <a href="{{ auth()->user()->role === 'administrador' ? route('admin') : '/recepcion' }}" class="volver">← Volver al panel</a>
 </main>
 <script>
     document.querySelectorAll('form[data-auto-complete]').forEach((form) => {

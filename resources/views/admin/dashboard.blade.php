@@ -93,7 +93,9 @@
             <nav class="admin-nav" aria-label="Menú de administración">
                 <a href="{{ route('admin') }}" aria-current="page"><span class="nav-icon">⌂</span>Resumen</a>
                 <a href="{{ route('admin.huespedes.index') }}"><span class="nav-icon">♙</span>Huéspedes</a>
-                <a href="{{ route('admin.pagos.index') }}"><span class="nav-icon">▤</span>Historial de pagos</a>
+                <a href="/habitaciones"><span class="nav-icon">▰</span>Habitaciones</a>
+                <a href="/reservaciones"><span class="nav-icon">▦</span>Reservaciones</a>
+                <a href="{{ route('admin.pagos.index') }}"><span class="nav-icon">▤</span>Pagos y cobros</a>
                 <a href="{{ route('admin.finanzas') }}"><span class="nav-icon">◫</span>Finanzas</a>
                 <a href="{{ route('admin.trabajadores.index') }}"><span class="nav-icon">♧</span>Trabajadores y roles</a>
                 <a href="{{ route('admin.servicios.index') }}"><span class="nav-icon">▦</span>Solicitudes de servicios</a>

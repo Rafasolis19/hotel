@@ -144,7 +144,7 @@
         @endforelse
     </table>
 
-    <a class="volver" href="/recepcion">← Regresar al panel</a>
+    <a class="volver" href="{{ auth()->user()->role === 'administrador' ? route('admin') : '/recepcion' }}">← Regresar al panel</a>
 
 </div>
 

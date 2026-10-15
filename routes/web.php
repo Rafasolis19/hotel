@@ -274,6 +274,43 @@ Route::get('/admin/huespedes', function () {
     return view('admin.huespedes', compact('huespedes'));
 })->middleware(['auth', 'role:administrador'])->name('admin.huespedes.index');
 
+Route::get('/admin/huespedes/crear', function () {
+    return view('admin.crear-huesped');
+})->middleware(['auth', 'role:administrador'])->name('admin.huespedes.create');
+
+Route::post('/admin/huespedes', function (Request $request) {
+    $datos = $request->validate([
+        'nombre' => 'required|string|max:255',
+        'apellido_paterno' => 'required|string|max:255',
+        'apellido_materno' => 'required|string|max:255',
+        'numero' => 'required|string|max:50',
+        'email' => [
+            'required',
+            'email',
+            'max:255',
+            Rule::unique('usuarios', 'email')->where(fn ($query) => $query->where('tipo_usuario', 'huesped')),
+        ],
+    ]);
+
+    DB::table('usuarios')->insert([
+        'nombre' => $datos['nombre'],
+        'apellido_paterno' => $datos['apellido_paterno'],
+        'apellido_materno' => $datos['apellido_materno'],
+        'numero' => $datos['numero'],
+        'email' => strtolower(trim($datos['email'])),
+        'tipo_usuario' => 'huesped',
+        'role' => 'huesped',
+        'rfc' => null,
+        'nss' => null,
+        'user_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return redirect()->route('admin.huespedes.index')
+        ->with('success', 'El huésped se registró correctamente.');
+})->middleware(['auth', 'role:administrador'])->name('admin.huespedes.store');
+
 Route::get('/admin/huespedes/{huespedId}/editar', function ($huespedId) {
     $huesped = DB::table('usuarios')
         ->where('tipo_usuario', 'huesped')
@@ -319,6 +356,33 @@ Route::put('/admin/huespedes/{huespedId}', function (Request $request, $huespedI
 })->middleware(['auth', 'role:administrador'])->name('admin.huespedes.update');
 
 Route::get('/admin/pagos', function () {
+    $pendientes = DB::table('reservaciones')
+        ->join('usuarios as huespedes', 'reservaciones.huesped_id', '=', 'huespedes.id')
+        ->join('habitaciones', 'reservaciones.habitacion_id', '=', 'habitaciones.id')
+        ->leftJoinSub(
+            DB::table('pagos')
+                ->select('reservacion_id')
+                ->selectRaw('SUM(monto) as monto_pagado')
+                ->where('estado', 'pagado')
+                ->groupBy('reservacion_id'),
+            'pagos_acumulados',
+            fn ($join) => $join->on('reservaciones.id', '=', 'pagos_acumulados.reservacion_id')
+        )
+        ->where('reservaciones.estado', '!=', 'cancelada')
+        ->whereRaw('reservaciones.total > COALESCE(pagos_acumulados.monto_pagado, 0)')
+        ->select(
+            'reservaciones.id',
+            'huespedes.nombre as huesped_nombre',
+            'huespedes.apellido_paterno',
+            'huespedes.apellido_materno',
+            'habitaciones.nombre as habitacion_nombre',
+            'reservaciones.total'
+        )
+        ->selectRaw('COALESCE(pagos_acumulados.monto_pagado, 0) as monto_pagado')
+        ->selectRaw('(reservaciones.total - COALESCE(pagos_acumulados.monto_pagado, 0)) as saldo_pendiente')
+        ->orderByDesc('reservaciones.id')
+        ->get();
+
     $pagos = DB::table('pagos')
         ->join('reservaciones', 'pagos.reservacion_id', '=', 'reservaciones.id')
         ->join('usuarios as huespedes', 'reservaciones.huesped_id', '=', 'huespedes.id')
@@ -341,7 +405,7 @@ Route::get('/admin/pagos', function () {
         ->orderByDesc('pagos.fecha_pago')
         ->get();
 
-    return view('admin.pagos', compact('pagos'));
+    return view('admin.pagos', compact('pagos', 'pendientes'));
 })->middleware(['auth', 'role:administrador'])->name('admin.pagos.index');
 
 Route::get('/admin/finanzas', function () {
@@ -349,15 +413,23 @@ Route::get('/admin/finanzas', function () {
         ->where('estado', 'pagado')
         ->sum('monto');
 
-    $cantidadPagos = DB::table('pagos')
-        ->where('estado', 'pagado')
+    $cantidadPagos = DB::table('reservaciones')
+        ->where('estado', 'pagada')
         ->count();
 
     $porCobrar = DB::table('reservaciones')
-        ->leftJoin('pagos', 'reservaciones.id', '=', 'pagos.reservacion_id')
-        ->whereNull('pagos.id')
+        ->leftJoinSub(
+            DB::table('pagos')
+                ->select('reservacion_id')
+                ->selectRaw('SUM(monto) as monto_pagado')
+                ->where('estado', 'pagado')
+                ->groupBy('reservacion_id'),
+            'pagos_acumulados',
+            fn ($join) => $join->on('reservaciones.id', '=', 'pagos_acumulados.reservacion_id')
+        )
         ->where('reservaciones.estado', '!=', 'cancelada')
-        ->sum('reservaciones.total');
+        ->whereRaw('reservaciones.total > COALESCE(pagos_acumulados.monto_pagado, 0)')
+        ->sum(DB::raw('reservaciones.total - COALESCE(pagos_acumulados.monto_pagado, 0)'));
 
     $pagosPorMetodo = DB::table('pagos')
         ->select(
@@ -802,10 +874,22 @@ Route::get('/reservaciones/crear/{habitacionId}', function ($habitacionId) {
 
     $huespedes = DB::table('usuarios')
         ->where('tipo_usuario', 'huesped')
+        ->whereNotExists(function ($query) {
+            $query->select(DB::raw(1))
+                ->from('reservaciones')
+                ->whereColumn('reservaciones.huesped_id', 'usuarios.id')
+                ->where('reservaciones.estado', '!=', 'cancelada')
+                ->whereDate('reservaciones.fecha_entrada', '<=', today())
+                ->whereDate('reservaciones.fecha_salida', '>', today());
+        })
         ->orderBy('nombre')
         ->get();
 
-    return view('recepcion.crear', compact('habitacion', 'huespedes'));
+    $hayHuespedesRegistrados = DB::table('usuarios')
+        ->where('tipo_usuario', 'huesped')
+        ->exists();
+
+    return view('recepcion.crear', compact('habitacion', 'huespedes', 'hayHuespedesRegistrados'));
 })->middleware(['auth', 'role:recepcionista']);
 
 Route::get('/reservaciones', function () {
@@ -859,6 +943,21 @@ Route::post('/reservaciones', function (Request $request) {
     if (! $esHuesped) {
         return back()
             ->withErrors(['huesped_id' => 'Selecciona una persona registrada como huésped.'])
+            ->withInput();
+    }
+
+    $huespedReservado = DB::table('reservaciones')
+        ->where('huesped_id', $datos['huesped_id'])
+        ->where('estado', '!=', 'cancelada')
+        ->where('fecha_entrada', '<', $datos['fecha_salida'])
+        ->where('fecha_salida', '>', $datos['fecha_entrada'])
+        ->exists();
+
+    if ($huespedReservado) {
+        return back()
+            ->withErrors([
+                'huesped_id' => 'Este huésped ya tiene una reservación para esas fechas.',
+            ])
             ->withInput();
     }
 
@@ -1034,8 +1133,17 @@ Route::get('/pagos', function () {
     $pendientes = DB::table('reservaciones')
         ->join('usuarios as huespedes', 'reservaciones.huesped_id', '=', 'huespedes.id')
         ->join('habitaciones', 'reservaciones.habitacion_id', '=', 'habitaciones.id')
-        ->leftJoin('pagos', 'reservaciones.id', '=', 'pagos.reservacion_id')
-        ->whereNull('pagos.id')
+        ->leftJoinSub(
+            DB::table('pagos')
+                ->select('reservacion_id')
+                ->selectRaw('SUM(monto) as monto_pagado')
+                ->where('estado', 'pagado')
+                ->groupBy('reservacion_id'),
+            'pagos_acumulados',
+            fn ($join) => $join->on('reservaciones.id', '=', 'pagos_acumulados.reservacion_id')
+        )
+        ->where('reservaciones.estado', '!=', 'cancelada')
+        ->whereRaw('reservaciones.total > COALESCE(pagos_acumulados.monto_pagado, 0)')
         ->select(
             'reservaciones.id',
             'huespedes.nombre as huesped_nombre',
@@ -1044,6 +1152,8 @@ Route::get('/pagos', function () {
             'habitaciones.nombre as habitacion_nombre',
             'reservaciones.total'
         )
+        ->selectRaw('COALESCE(pagos_acumulados.monto_pagado, 0) as monto_pagado')
+        ->selectRaw('(reservaciones.total - COALESCE(pagos_acumulados.monto_pagado, 0)) as saldo_pendiente')
         ->orderByDesc('reservaciones.id')
         ->get();
 
@@ -1075,7 +1185,7 @@ Route::get('/pagos', function () {
 |--------------------------------------------------------------------------
 */
 
-Route::get('/pagos/crear/{reservacionId}', function ($reservacionId) {
+Route::get('/pagos/crear/{reservacionId}', function (Request $request, $reservacionId) {
     $reservacion = DB::table('reservaciones')
         ->join('usuarios as huespedes', 'reservaciones.huesped_id', '=', 'huespedes.id')
         ->join('habitaciones', 'reservaciones.habitacion_id', '=', 'habitaciones.id')
@@ -1096,9 +1206,22 @@ Route::get('/pagos/crear/{reservacionId}', function ($reservacionId) {
         abort(404, 'No se encontró esa reservación.');
     }
 
-    if (DB::table('pagos')->where('reservacion_id', $reservacionId)->exists()) {
-        return redirect('/pagos')
-            ->with('success', 'Esta reservación ya tiene un pago registrado.');
+    $reservacion->monto_pagado = (float) DB::table('pagos')
+        ->where('reservacion_id', $reservacionId)
+        ->where('estado', 'pagado')
+        ->sum('monto');
+    $reservacion->saldo_pendiente = round(
+        max(0, (float) $reservacion->total - $reservacion->monto_pagado),
+        2
+    );
+
+    if ($reservacion->saldo_pendiente <= 0) {
+        $destino = $request->user()->role === 'administrador'
+            ? route('admin.pagos.index')
+            : '/pagos';
+
+        return redirect($destino)
+            ->with('success', 'Esta reservación ya está liquidada.');
     }
 
     return view('recepcion.pagar', compact('reservacion'));
@@ -1111,88 +1234,168 @@ Route::get('/pagos/crear/{reservacionId}', function ($reservacionId) {
 */
 
 Route::post('/pagos/{reservacionId}', function (Request $request, $reservacionId) {
-    // Permite ingresar el número con espacios o guiones, pero lo valida sin ellos.
-    $numeroTarjeta = preg_replace(
-        '/\D/',
-        '',
-        $request->input('numero_tarjeta', '')
-    );
+    $pagosSolicitados = $request->input('pagos', []);
+    $pagosSolicitados = is_array($pagosSolicitados) ? array_values($pagosSolicitados) : [];
 
-    $request->merge([
-        'numero_tarjeta' => $numeroTarjeta,
-    ]);
-
-    $reglas = [
-        'metodo_pago' => 'required|in:efectivo,tarjeta,transferencia',
-    ];
-
-    if ($request->input('metodo_pago') === 'tarjeta') {
-        $reglas += [
-            'titular_tarjeta' => 'required|string|max:255',
-            'numero_tarjeta' => 'required|digits_between:13,19',
-            'vencimiento_tarjeta' => 'required|date_format:Y-m',
-            'codigo_seguridad' => 'required|digits_between:3,4',
-        ];
+    if (! $request->boolean('agregar_segundo_pago')) {
+        $pagosSolicitados = array_slice($pagosSolicitados, 0, 1);
     }
 
+    foreach ($pagosSolicitados as $indice => $pagoSolicitado) {
+        if (is_array($pagoSolicitado)
+            && isset($pagoSolicitado['numero_tarjeta'])
+            && is_scalar($pagoSolicitado['numero_tarjeta'])) {
+            $pagosSolicitados[$indice]['numero_tarjeta'] = preg_replace(
+                '/\D/',
+                '',
+                (string) $pagoSolicitado['numero_tarjeta']
+            );
+        }
+    }
+
+    $request->merge(['pagos' => $pagosSolicitados]);
+
+    $reglas = [
+        'agregar_segundo_pago' => 'sometimes|boolean',
+        'pagos' => 'required|array|min:1|max:2',
+        'pagos.0.metodo_pago' => 'required|in:efectivo,tarjeta,transferencia',
+        'pagos.0.monto' => 'required|numeric|gt:0',
+        'pagos.0.titular_tarjeta' => 'required_if:pagos.0.metodo_pago,tarjeta|nullable|string|max:255',
+        'pagos.0.numero_tarjeta' => 'required_if:pagos.0.metodo_pago,tarjeta|nullable|digits_between:13,19',
+        'pagos.0.vencimiento_tarjeta' => 'required_if:pagos.0.metodo_pago,tarjeta|nullable|date_format:Y-m',
+        'pagos.0.codigo_seguridad' => 'required_if:pagos.0.metodo_pago,tarjeta|nullable|digits_between:3,4',
+        'pagos.1.metodo_pago' => 'required_if:agregar_segundo_pago,1|nullable|in:efectivo,tarjeta,transferencia',
+        'pagos.1.monto' => 'required_if:agregar_segundo_pago,1|nullable|numeric|gt:0',
+        'pagos.1.titular_tarjeta' => 'required_if:pagos.1.metodo_pago,tarjeta|nullable|string|max:255',
+        'pagos.1.numero_tarjeta' => 'required_if:pagos.1.metodo_pago,tarjeta|nullable|digits_between:13,19',
+        'pagos.1.vencimiento_tarjeta' => 'required_if:pagos.1.metodo_pago,tarjeta|nullable|date_format:Y-m',
+        'pagos.1.codigo_seguridad' => 'required_if:pagos.1.metodo_pago,tarjeta|nullable|digits_between:3,4',
+    ];
+
     $validador = Validator::make($request->all(), $reglas);
+    $inputSeguro = $request->except(['pagos']);
+    $inputSeguro['pagos'] = [];
+
+    foreach ($pagosSolicitados as $pagoSolicitado) {
+        if (is_array($pagoSolicitado)) {
+            $inputSeguro['pagos'][] = array_diff_key(
+                $pagoSolicitado,
+                array_flip(['numero_tarjeta', 'codigo_seguridad'])
+            );
+        }
+    }
 
     if ($validador->fails()) {
-        // Evita conservar número y código de seguridad al volver al formulario.
         return back()
             ->withErrors($validador)
-            ->withInput($request->except([
-                'numero_tarjeta',
-                'codigo_seguridad',
-            ]));
+            ->withInput($inputSeguro);
     }
 
     $datos = $validador->validated();
-    $reservacion = DB::table('reservaciones')->find($reservacionId);
+    $totalSolicitado = round(array_sum(array_column($datos['pagos'], 'monto')), 2);
 
-    if (! $reservacion) {
-        abort(404);
-    }
-
-    $pagoExiste = DB::table('pagos')
-        ->where('reservacion_id', $reservacionId)
-        ->exists();
-
-    if ($pagoExiste) {
-        return redirect('/pagos')
-            ->with('success', 'Esta reservación ya tiene un pago registrado.');
-    }
-
-    DB::transaction(function () use ($reservacion, $datos) {
-        $pago = [
-            'reservacion_id' => $reservacion->id,
-            'metodo_pago' => $datos['metodo_pago'],
-            'monto' => $reservacion->total,
-            'estado' => 'pagado',
-            'fecha_pago' => now(),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ];
-
-        if ($datos['metodo_pago'] === 'tarjeta') {
-            $pago['titular_tarjeta'] = $datos['titular_tarjeta'];
-            $pago['tarjeta_ultimos4'] = substr(
-                $datos['numero_tarjeta'],
-                -4
-            );
-            $pago['vencimiento_tarjeta'] = $datos['vencimiento_tarjeta'];
+    foreach ($datos['pagos'] as $indice => $pago) {
+        if ($pago['metodo_pago'] !== 'tarjeta') {
+            continue;
         }
 
-        DB::table('pagos')->insert($pago);
+        $vencimiento = Carbon::createFromFormat('!Y-m', $pago['vencimiento_tarjeta']);
+
+        if ($vencimiento->endOfMonth()->isBefore(now())) {
+            return back()
+                ->withErrors([
+                    "pagos.$indice.vencimiento_tarjeta" => 'La tarjeta debe estar vigente.',
+                ])
+                ->withInput($inputSeguro);
+        }
+    }
+
+    $resultado = DB::transaction(function () use ($reservacionId, $datos, $totalSolicitado) {
+        $reservacion = DB::table('reservaciones')
+            ->where('id', $reservacionId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $reservacion) {
+            return ['estado' => 'no_encontrada'];
+        }
+
+        $montoPagado = (float) DB::table('pagos')
+            ->where('reservacion_id', $reservacionId)
+            ->where('estado', 'pagado')
+            ->sum('monto');
+        $saldoPendiente = round(max(0, (float) $reservacion->total - $montoPagado), 2);
+
+        if ($saldoPendiente <= 0) {
+            return ['estado' => 'liquidada'];
+        }
+
+        if ($totalSolicitado > $saldoPendiente) {
+            return ['estado' => 'excede_saldo', 'saldo' => $saldoPendiente];
+        }
+
+        foreach ($datos['pagos'] as $pago) {
+            $registro = [
+                'reservacion_id' => $reservacion->id,
+                'metodo_pago' => $pago['metodo_pago'],
+                'monto' => round((float) $pago['monto'], 2),
+                'estado' => 'pagado',
+                'fecha_pago' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+
+            if ($pago['metodo_pago'] === 'tarjeta') {
+                $registro['titular_tarjeta'] = $pago['titular_tarjeta'];
+                $registro['tarjeta_ultimos4'] = substr($pago['numero_tarjeta'], -4);
+                $registro['vencimiento_tarjeta'] = $pago['vencimiento_tarjeta'];
+            }
+
+            DB::table('pagos')->insert($registro);
+        }
+
+        $montoPagado = round($montoPagado + $totalSolicitado, 2);
+        $estadoReservacion = $montoPagado >= round((float) $reservacion->total, 2)
+            ? 'pagada'
+            : 'parcial';
 
         DB::table('reservaciones')
             ->where('id', $reservacion->id)
             ->update([
-                'estado' => 'pagada',
+                'estado' => $estadoReservacion,
                 'updated_at' => now(),
             ]);
+
+        return [
+            'estado' => $estadoReservacion,
+            'saldo' => round(max(0, (float) $reservacion->total - $montoPagado), 2),
+        ];
     });
 
-    return redirect('/pagos')
-        ->with('success', 'Pago registrado correctamente.');
+    if ($resultado['estado'] === 'no_encontrada') {
+        abort(404);
+    }
+
+    $destino = $request->user()->role === 'administrador'
+        ? route('admin.pagos.index')
+        : '/pagos';
+
+    if ($resultado['estado'] === 'liquidada') {
+        return redirect($destino)
+            ->with('success', 'Esta reservación ya está liquidada.');
+    }
+
+    if ($resultado['estado'] === 'excede_saldo') {
+        return back()
+            ->withErrors([
+                'pagos' => 'Los importes superan el saldo pendiente de $'.number_format($resultado['saldo'], 2).'.',
+            ])
+            ->withInput($inputSeguro);
+    }
+
+    $mensaje = $resultado['estado'] === 'pagada'
+        ? 'Pago registrado. La reservación quedó liquidada.'
+        : 'Abono registrado. Saldo pendiente: $'.number_format($resultado['saldo'], 2).'.';
+
+    return redirect($destino)->with('success', $mensaje);
 })->middleware(['auth', 'role:recepcionista']);

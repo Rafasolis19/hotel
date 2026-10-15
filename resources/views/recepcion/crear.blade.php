@@ -69,8 +69,12 @@
         <p><strong>${{ number_format($habitacion->precio, 2) }} por noche</strong></p>
 
         @if ($huespedes->isEmpty())
-            <p class="error">Primero debes registrar un huésped.</p>
-            <a href="/huespedes" class="volver">Ir a huéspedes</a>
+            @if ($hayHuespedesRegistrados)
+                <p class="error">No hay huéspedes disponibles; todos tienen una estancia activa.</p>
+            @else
+                <p class="error">Primero debes registrar un huésped.</p>
+            @endif
+            <a href="{{ auth()->user()->role === 'administrador' ? route('admin.huespedes.index') : '/huespedes' }}" class="volver">Ir a huéspedes</a>
         @else
             <form method="POST" action="/reservaciones">
                 @csrf
